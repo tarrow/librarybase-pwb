@@ -1,5 +1,5 @@
 import pywikibot
-#import epmc
+from epmclib.getPMCID import getPMCID
 import wikieupmcanalytics
 from SPARQLWrapper import SPARQLWrapper, JSON
 
@@ -103,7 +103,7 @@ class JournalArticlePage(LibraryBasePage):
 		self.setAuthors(metadata['authors'])
 		self.setArticles(metadata['pmcid'])
 
-	def itemAlreadyExists(self, id):
+	def articleAlreadyExists(self, id):
 		sparql = SPARQLWrapper("http://sparql.librarybase.wmflabs.org/bigdata/namespace/wdq/sparql")
 		querystring = """
 		PREFIX wdt: <http://librarybase.wmflabs.org/prop/direct/>
@@ -139,16 +139,18 @@ site = pywikibot.Site("librarybase", "librarybase")
 #repo = site.data_repository()
 item = JournalArticlePage(site)
 
-pmcid = 'PMC514446'
+pmcid = '514446'
 
-metadata = epmclib.searchByPmid(pmcid);
+pmcidobj = getPMCID(pmcid)
+pmcidobj.getBBasicMetadata()
+metadata = pmcidobj.metadata
 
 #print(item.authorAlreadyExists('0000-0002-1298-7653'))
 
-if not item.itemAlreadyExists(pmcid):
+if not item.articleAlreadyExists(metadata['pmcid']):
 	item.setMetaData(metadata)
 else:
-	print("%s already exists") % pmcid
+	print("{} already exists".format(metadata['pmcid']))
 
 #print(metadata)
 
