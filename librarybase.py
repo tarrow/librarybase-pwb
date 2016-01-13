@@ -1,6 +1,6 @@
 import pywikibot
 from epmclib.getPMCID import getPMCID
-import wikieupmcanalytics
+import queryCiteFile
 from SPARQLWrapper import SPARQLWrapper, JSON
 
 class LibraryBasePage(pywikibot.ItemPage):
@@ -19,14 +19,20 @@ class AuthorPage(LibraryBasePage):
 	def addOrcid(self, orcid):
 			self.makeSimpleClaim('P18', orcid)
 
+	def setItemType(self):
+		self.makeSimpleClaim('P19', pywikibot.ItemPage(self.site, title='Q265'))
+
 
 class JournalArticlePage(LibraryBasePage):
+
+	def setItemType(self):
+		self.makeSimpleClaim('P19', pywikibot.ItemPage(self.site, title='Q264'))
 
 	def setTitle(self, title):
 		self.editLabels( {'en': {'language': 'en', 'value': title}} )
 		#self.makeSimpleClaim('P2', title)
 		#Type of source = journal article
-		journalarticlepage = pywikibot.ItemPage(self.site, title='Q10')
+		journalarticlepage = pywikibot.ItemPage(self.site, title='Q10') #type of source item - jounal item
 		self.makeSimpleClaim('P3', journalarticlepage)
 
 	def addAuthor(self, author):
@@ -40,6 +46,8 @@ class JournalArticlePage(LibraryBasePage):
 				authorPage=AuthorPage(self.site, existingauthor)
 		else:
 			authorPage.setName(author)
+			authorPage.setItemType()
+		print("adding author:" + author)
 		self.makeSimpleClaim('P2', authorPage)
 
 
@@ -75,7 +83,8 @@ class JournalArticlePage(LibraryBasePage):
 		self.makeSimpleClaim('P17', pmcid)
 
 	def setArticles(self, pmcid):
-		articles = wikieupmcanalytics.findPagesIDAppears(pmcid)
+		citefile = queryCiteFile.CiteFile()
+		articles = citefile.findPagesIDAppears(pmcid)
 		for idx, article in enumerate(articles):
 			print(idx)
 			self.addArticle(article)
@@ -90,6 +99,7 @@ class JournalArticlePage(LibraryBasePage):
 		self.makeSimpleClaim('P4', journalpage)
 
 	def setMetaData(self, metadata):
+		self.setItemType()
 		self.setTitle(metadata['title'])
 		self.setDate(metadata['date'])
 		self.setVolume(metadata['volume'])
@@ -103,8 +113,9 @@ class JournalArticlePage(LibraryBasePage):
 		self.setAuthors(metadata['authors'])
 		self.setArticles(metadata['pmcid'])
 
+
 	def articleAlreadyExists(self, id):
-		sparql = SPARQLWrapper("http://sparql.librarybase.wmflabs.org/bigdata/namespace/wdq/sparql")
+		sparql = SPARQLWrapper("http://sparql.librarybase.wmflabs.org/bigdata/namespace/lb/sparql")
 		querystring = """
 		PREFIX wdt: <http://librarybase.wmflabs.org/prop/direct/>
 		SELECT ?s WHERE {
@@ -113,13 +124,14 @@ class JournalArticlePage(LibraryBasePage):
 		sparql.setQuery(querystring)
 		sparql.setReturnFormat(JSON)
 		results = sparql.query().convert()
+		print (results)
 		if len(results["results"]["bindings"]) >= 1:
 			return True
 		else:
 			return False
 
 	def authorAlreadyExists(self, orcid):
-		sparql = SPARQLWrapper("http://sparql.librarybase.wmflabs.org/bigdata/namespace/wdq/sparql")
+		sparql = SPARQLWrapper("http://sparql.librarybase.wmflabs.org/bigdata/namespace/lb/sparql")
 		querystring = """
 		PREFIX wdt: <http://librarybase.wmflabs.org/prop/direct/>
 		SELECT ?s WHERE {
@@ -134,30 +146,23 @@ class JournalArticlePage(LibraryBasePage):
 			return False
 
 
+if __name__ == '__main__':
+	site = pywikibot.Site("librarybase", "librarybase")
+	#repo = site.data_repositry()
+	item = JournalArticlePage(site, 'Q363')
 
-site = pywikibot.Site("librarybase", "librarybase")
-#repo = site.data_repository()
-item = JournalArticlePage(site)
+	pmcid = 'PMC1347501'
 
-pmcid = '514446'
+	pmcidobj = getPMCID(pmcid)
+	pmcidobj.getBBasicMetadata()
+	metadata = pmcidobj.metadata
 
-pmcidobj = getPMCID(pmcid)
-pmcidobj.getBBasicMetadata()
-metadata = pmcidobj.metadata
+	print(item.articleAlreadyExists(metadata['pmcid']))
 
-#print(item.authorAlreadyExists('0000-0002-1298-7653'))
+	#print(item.authorAlreadyExists('0000-0002-1298-7653'))
 
-if not item.articleAlreadyExists(metadata['pmcid']):
-	item.setMetaData(metadata)
-else:
-	print("{} already exists".format(metadata['pmcid']))
-
-#print(metadata)
-
-#item.setMetaData(metadata)
-
-#wikieupmcanalytics.findPagesIDAppears('139241')
-
-#print(item.get())
-#print(item.get())
-
+	if not item.articleAlreadyExists(metadata['pmcid']):
+		print('Setting metadata for: ' + metadata['pmcid'])
+		#item.setMetaData(metadata)
+	else:
+		print("{} already exists".format(metadata['pmcid']))
