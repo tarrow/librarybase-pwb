@@ -3,13 +3,20 @@ from epmclib.getPMCID import getPMCID
 import queryCiteFile
 from SPARQLWrapper import SPARQLWrapper, JSON
 
+global sparqlepointurl
+#sparqlepointurl = "http://sparql.librarybase.wmflabs.org/"
+sparqlepointurl = "http://localhost:9999/"
+
 class LibraryBasePage(pywikibot.ItemPage):
 	def makeSimpleClaim(self, property, target):
 		if not hasattr(self, 'claims'):
 			self.get()
 		claim = pywikibot.Claim(self.site, property)
 		claim.setTarget(target)
+		fromEPMCClaim = pywikibot.Claim(self.site, 'P20')
+		fromEPMCClaim.setTarget(pywikibot.ItemPage(self.site, title='Q335'))
 		self.addClaim(claim)
+		claim.addSource(fromEPMCClaim)
 
 
 class AuthorPage(LibraryBasePage):
@@ -20,8 +27,8 @@ class AuthorPage(LibraryBasePage):
 			self.makeSimpleClaim('P18', orcid)
 
 	def setItemType(self):
-		self.makeSimpleClaim('P19', pywikibot.ItemPage(self.site, title='Q265'))
-
+		self.makeSimpleClaim('P19', pywikibot.ItemPage(self.site, title='Q265')) #type of item - source
+		self.makeSimpleClaim('P3', pywikibot.ItemPage(self.site, title='Q10')) #type of source item - jounal item
 
 class JournalArticlePage(LibraryBasePage):
 
@@ -32,13 +39,11 @@ class JournalArticlePage(LibraryBasePage):
 		self.editLabels( {'en': {'language': 'en', 'value': title}} )
 		#self.makeSimpleClaim('P2', title)
 		#Type of source = journal article
-		journalarticlepage = pywikibot.ItemPage(self.site, title='Q10') #type of source item - jounal item
-		self.makeSimpleClaim('P3', journalarticlepage)
 
 	def addAuthor(self, author):
 		authorPage=AuthorPage(self.site)
-		if author in metadata['orcids']:
-			existingauthor = self.authorAlreadyExists(metadata['orcids'][author])
+		if author in self.metadata['orcids']:
+			existingauthor = self.authorAlreadyExists(self.metadata['orcids'][author])
 			if existingauthor == False :
 
 				authorPage.addOrcid(metadata['orcids'][author])
@@ -99,8 +104,9 @@ class JournalArticlePage(LibraryBasePage):
 		self.makeSimpleClaim('P4', journalpage)
 
 	def setMetaData(self, metadata):
-		self.setItemType()
 		self.setTitle(metadata['title'])
+		self.setItemType()
+		self.setPMCID(metadata['pmcid'])
 		self.setDate(metadata['date'])
 		self.setVolume(metadata['volume'])
 		self.setIssue(metadata['issue'])
@@ -109,13 +115,12 @@ class JournalArticlePage(LibraryBasePage):
 		self.setDOI(metadata['doi'])
 		self.setISSN(metadata['issn'])
 		self.setPMID(metadata['pmid'])
-		self.setPMCID(metadata['pmcid'])
 		self.setAuthors(metadata['authors'])
 		self.setArticles(metadata['pmcid'])
 
 
 	def articleAlreadyExists(self, id):
-		sparql = SPARQLWrapper("http://sparql.librarybase.wmflabs.org/bigdata/namespace/lb/sparql")
+		sparql = SPARQLWrapper("{}bigdata/namespace/lb/sparql".format(sparqlepointurl))
 		querystring = """
 		PREFIX wdt: <http://librarybase.wmflabs.org/prop/direct/>
 		SELECT ?s WHERE {
@@ -124,14 +129,13 @@ class JournalArticlePage(LibraryBasePage):
 		sparql.setQuery(querystring)
 		sparql.setReturnFormat(JSON)
 		results = sparql.query().convert()
-		print (results)
 		if len(results["results"]["bindings"]) >= 1:
 			return True
 		else:
 			return False
 
 	def authorAlreadyExists(self, orcid):
-		sparql = SPARQLWrapper("http://sparql.librarybase.wmflabs.org/bigdata/namespace/lb/sparql")
+		sparql = SPARQLWrapper("{}bigdata/namespace/lb/sparql".format(sparqlepointurl))
 		querystring = """
 		PREFIX wdt: <http://librarybase.wmflabs.org/prop/direct/>
 		SELECT ?s WHERE {
@@ -149,9 +153,9 @@ class JournalArticlePage(LibraryBasePage):
 if __name__ == '__main__':
 	site = pywikibot.Site("librarybase", "librarybase")
 	#repo = site.data_repositry()
-	item = JournalArticlePage(site, 'Q363')
+	item = JournalArticlePage(site, 'Q261')
 
-	pmcid = 'PMC1347501'
+	pmcid = 'PMC3315379'
 
 	pmcidobj = getPMCID(pmcid)
 	pmcidobj.getBBasicMetadata()
@@ -163,6 +167,6 @@ if __name__ == '__main__':
 
 	if not item.articleAlreadyExists(metadata['pmcid']):
 		print('Setting metadata for: ' + metadata['pmcid'])
-		#item.setMetaData(metadata)
+		item.setMetaData(metadata)
 	else:
 		print("{} already exists".format(metadata['pmcid']))
