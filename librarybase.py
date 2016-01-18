@@ -1,22 +1,77 @@
 import pywikibot
+from pywikibot.pagegenerators import PagesFromTitlesGenerator, WikibaseItemGenerator
 from epmclib.getPMCID import getPMCID
 import queryCiteFile
 from SPARQLWrapper import SPARQLWrapper, JSON
 
 global sparqlepointurl
-#sparqlepointurl = "http://sparql.librarybase.wmflabs.org/"
-sparqlepointurl = "http://localhost:9999/"
+sparqlepointurl = "http://sparql.librarybase.wmflabs.org/"
+#sparqlepointurl = "http://localhost:9999/"
+
+class LibraryBaseSearch():
+
+	def rawquery(self,querystring):
+		sparql = SPARQLWrapper("{}bigdata/namespace/lb/sparql".format(sparqlepointurl))
+		sparql.setQuery(querystring)
+		sparql.setReturnFormat(JSON)
+		results = sparql.query().convert()
+		self.results = results
+
+	def JournalArticleGenerator(self,gen):
+		for page in gen:
+			if isinstance(page, JournalArticlePage):
+				yield page
+			else:
+				yield JournalArticlePage(pywikibot.getSite(), page.title())
+
+	def AuthorGenerator(self,gen):
+		for page in gen:
+			if isinstance(page, AuthorPage):
+				yield page
+			else:
+				yield AuthorPage(pywikibot.getSite(), page.title())
+
+	def findJournalArticlesMissingOntologicalData(self):
+		querystring = """prefix lbt: <http://librarybase.wmflabs.org/prop/direct/>
+						prefix lb: <http://librarybase.wmflabs.org/entity/>
+
+						SELECT DISTINCT ?s WHERE {
+						?s lbt:P17 ?r .
+						MINUS { ?s lbt:P19 ?o .
+						?s lbt:P3 ?l .
+						}
+						}"""
+		self.rawquery(querystring)
+		textlist = [line['s']['value'][38:] for line in self.results['results']['bindings']]
+		return self.JournalArticleGenerator(PagesFromTitlesGenerator(textlist))
 
 class LibraryBasePage(pywikibot.ItemPage):
-	def makeSimpleClaim(self, property, target):
+	def __init__(self, site, title=None, ns=None):
+		pywikibot.ItemPage.__init__(self, site, title, ns)
+
+	def makeSimpleClaim(self, property, target, reference='EPMC'):
 		if not hasattr(self, 'claims'):
 			self.get()
 		claim = pywikibot.Claim(self.site, property)
 		claim.setTarget(target)
-		fromEPMCClaim = pywikibot.Claim(self.site, 'P20')
-		fromEPMCClaim.setTarget(pywikibot.ItemPage(self.site, title='Q335'))
 		self.addClaim(claim)
-		claim.addSource(fromEPMCClaim)
+		if reference == 'EPMC':
+			fromEPMCClaim = pywikibot.Claim(self.site, 'P20')
+			fromEPMCClaim.setTarget(pywikibot.ItemPage(self.site, title='Q335'))
+			claim.addSource(fromEPMCClaim)
+
+	def getItemType(self):
+		self.get()
+		if self.claims:
+			if 'P19' in self.claims:
+				return { 'Q264' : 'source',
+						 'Q265' : 'person',
+						 'Q262' : 'meta',
+						 'Q263' : 'source-type',
+						 'Q266' : 'organisation'
+					   }.get(self.claims['P19'][0].getTarget().id,'unknown') # unknown means target is not in list above
+			else:
+				return 'unspecified' #this means no P19 (item type) statement
 
 
 class AuthorPage(LibraryBasePage):
@@ -28,12 +83,12 @@ class AuthorPage(LibraryBasePage):
 
 	def setItemType(self):
 		self.makeSimpleClaim('P19', pywikibot.ItemPage(self.site, title='Q265')) #type of item - source
-		self.makeSimpleClaim('P3', pywikibot.ItemPage(self.site, title='Q10')) #type of source item - jounal item
 
 class JournalArticlePage(LibraryBasePage):
 
 	def setItemType(self):
 		self.makeSimpleClaim('P19', pywikibot.ItemPage(self.site, title='Q264'))
+		self.makeSimpleClaim('P3', pywikibot.ItemPage(self.site, title='Q10')) #type of source item - jounal item
 
 	def setTitle(self, title):
 		self.editLabels( {'en': {'language': 'en', 'value': title}} )
@@ -67,22 +122,28 @@ class JournalArticlePage(LibraryBasePage):
 		#self.makeSimpleClaim('P5', rawdate)
 
 	def setVolume(self, volume):
-		self.makeSimpleClaim('P9', volume)
+		if volume:
+			self.makeSimpleClaim('P9', volume)
 
 	def setIssue(self, issue):
-		self.makeSimpleClaim('P10', issue)
+		if issue:
+			self.makeSimpleClaim('P10', issue)
 
 	def setPages(self, pages):
-		self.makeSimpleClaim('P11', pages)
+		if pages:
+			self.makeSimpleClaim('P11', pages)
 
 	def setDOI(self, doi):
-		self.makeSimpleClaim('P13', doi)
+		if doi:
+			self.makeSimpleClaim('P13', doi)
 
 	def setISSN(self, issn):
-		self.makeSimpleClaim('P14', issn)
+		if issn:
+			self.makeSimpleClaim('P14', issn)
 
 	def setPMID(self, pmid):
-		self.makeSimpleClaim('P15', pmid)
+		if pmid:
+			self.makeSimpleClaim('P15', pmid)
 
 	def setPMCID(self, pmcid):
 		self.makeSimpleClaim('P17', pmcid)
@@ -98,12 +159,13 @@ class JournalArticlePage(LibraryBasePage):
 		self.makeSimpleClaim('P8', article)
 
 	def setJournal(self, journal):
-		journalpage = pywikibot.ItemPage(self.site)
+		journalpage = JournalPage(self.site)
 		journalpage.editLabels( {'en': {'language': 'en', 'value': journal}} )
 
 		self.makeSimpleClaim('P4', journalpage)
 
 	def setMetaData(self, metadata):
+		self.metadata = metadata
 		self.setTitle(metadata['title'])
 		self.setItemType()
 		self.setPMCID(metadata['pmcid'])
@@ -148,6 +210,27 @@ class JournalArticlePage(LibraryBasePage):
 			return results["results"]["bindings"][0]["s"]["value"][38:]
 		else:
 			return False
+
+	def authorAlreadyExists(self, orcid):
+		sparql = SPARQLWrapper("{}bigdata/namespace/lb/sparql".format(sparqlepointurl))
+		querystring = """
+		PREFIX wdt: <http://librarybase.wmflabs.org/prop/direct/>
+		SELECT ?s WHERE {
+		?s wdt:P18 "%s" .
+ 		}""" % orcid
+		sparql.setQuery(querystring)
+		sparql.setReturnFormat(JSON)
+		results = sparql.query().convert()
+		if len(results["results"]["bindings"]) >= 1:
+			return results["results"]["bindings"][0]["s"]["value"][38:]
+		else:
+			return False
+
+class JournalPage(LibraryBasePage):
+	def setItemType(self):
+		self.makeSimpleClaim('P19', pywikibot.ItemPage(self.site, title='Q264'))
+		self.makeSimpleClaim('P3', pywikibot.ItemPage(self.site, title='Q12'))
+
 
 
 if __name__ == '__main__':
