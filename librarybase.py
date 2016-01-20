@@ -1,11 +1,11 @@
 import pywikibot
 from pywikibot.pagegenerators import PagesFromTitlesGenerator, WikibaseItemGenerator
 from epmclib.getPMCID import getPMCID
-#import queryCiteFile
+import queryCiteFile
 from SPARQLWrapper import SPARQLWrapper, JSON
 
 global sparqlepointurl
-#sparqlepointurl = "http://sparql.librarybase.wmflabs.org/"
+sparqlepointurl = "http://sparql.librarybase.wmflabs.org/"
 #sparqlepointurl = "http://localhost:9999/"
 
 class LibraryBaseSearch():
@@ -60,17 +60,55 @@ class LibraryBaseSearch():
 						prefix lb: <http://librarybase.wmflabs.org/entity/>
 
 						SELECT DISTINCT ?s WHERE {{
-						?s lbt:P19 lb:Q12 .
-						?s lbt:P14 '{0}'
+						?s lbt:P3 lb:Q12 .
+						?s lbt:P14 '{}'
 						}}""".format(issn)
         self.rawquery(querystring)
         textlist = [line['s']['value'][38:] for line in self.results['results']['bindings']]
         return self.JournalGenerator(PagesFromTitlesGenerator(textlist))
 
+    def predictISSNOfJournalsFromISSNOfArticle(self):
+        querystring = u"""prefix lbt: <http://librarybase.wmflabs.org/prop/direct/>
+						prefix lb: <http://librarybase.wmflabs.org/entity/>
+
+						SELECT ?journal ?issn WHERE {
+						?s lbt:P4 ?journal .
+						?s lbt:P14 ?issn
+						}"""
+        self.rawquery(querystring)
+        return [[line['journal']['value'][39:],line['issn']['value']] for line in self.results['results']['bindings']]
+
+    def findJournalArticleswithISSNThatPointToJournalWithoutISSN(self):
+        querystring = u"""prefix lbt: <http://librarybase.wmflabs.org/prop/direct/>
+						prefix lb: <http://librarybase.wmflabs.org/entity/>
+
+						SELECT DISTINCT ?s WHERE {{
+						?s lbt:P4 ?journal .
+						?s lbt:P14 ?issn .
+                        OPTIONAL {?journal lbt:P14 ?issn2}
+                          FILTER(!bound(?issn2))
+						}}"""
+        self.rawquery(querystring)
+        textlist = [line['s']['value'][38:] for line in self.results['results']['bindings']]
+        return self.JournalArticleGenerator(PagesFromTitlesGenerator(textlist))
+
 
 class LibraryBasePage(pywikibot.ItemPage):
     def __init__(self, site, title=None, ns=None):
         pywikibot.ItemPage.__init__(self, site, title, ns)
+
+    def getClaims(self, property):
+        """Get all the claims of a given property from an item"""
+        if not hasattr(self, 'claims'):
+            self.get()
+        if self.claims:
+            if property in self.claims:
+                return self.claims[property]
+        return None
+
+    def getClaimTargets(self, property):
+        claims=self.getClaims(property)
+        return [claim.getTarget() for claim in claims]
 
     def makeSimpleClaim(self, property, target, reference='EPMC'):
         if not hasattr(self, 'claims'):
@@ -90,7 +128,7 @@ class LibraryBasePage(pywikibot.ItemPage):
                 print('with reference to EPMC')
                 fromEPMCClaim = pywikibot.Claim(self.site, 'P20')
                 fromEPMCClaim.setTarget(pywikibot.ItemPage(self.site, title='Q335'))
-                #claim.addSource(fromEPMCClaim)
+                claim.addSource(fromEPMCClaim)
 
     def getItemType(self):
         self.get()
@@ -144,7 +182,8 @@ class JournalArticlePage(LibraryBasePage):
 
     def setAuthors(self, authors):
         for author in authors:
-            self.addAuthor(author)
+            if author:
+                self.addAuthor(author)
 
     def setDate(self, rawdate):
         splitdate = rawdate.split('-')
@@ -172,6 +211,14 @@ class JournalArticlePage(LibraryBasePage):
         if issn:
             self.makeSimpleClaim('P14', issn)
 
+    def getISSN(self):
+        if not hasattr(self, 'claims'):
+            self.get()
+        if self.claims:
+            if 'P14' in self.claims:
+                return self.claims['P14'][0].getTarget()
+
+
     def setPMID(self, pmid):
         if pmid:
             self.makeSimpleClaim('P15', pmid)
@@ -194,9 +241,10 @@ class JournalArticlePage(LibraryBasePage):
         if issn:
             searcher=LibraryBaseSearch()
             journals=searcher.findJournalByISSN(issn)
-            journalpage = journals.next()
-            if journalpage:
+            try:
+                journalpage = next(journals)
                 newJournalItemNeeded = False
+            except StopIteration: pass
         if newJournalItemNeeded:
             journalpage = JournalPage(self.site)
             journalpage.editLabels( {'en': {'language': 'en', 'value': journal}} )
@@ -268,7 +316,13 @@ class JournalArticlePage(LibraryBasePage):
 class JournalPage(LibraryBasePage):
     def setItemType(self):
         self.makeSimpleClaim('P19', pywikibot.ItemPage(self.site, title='Q264'))
-        self.makeSimpleClaim('P3', pywikibot.ItemPage(self.site, title='Q12'))
+        self.makeSimpleClaim('P3', pywikibot.ItemPage(self.site, title='Q12'), reference=None)
+
+    def setISSN(self, issn):
+        if issn:
+            self.makeSimpleClaim('P14', issn)
+
+
 
 
 
@@ -284,6 +338,7 @@ if __name__ == '__main__':
     metadata = pmcidobj.metadata
 
     print(item.articleAlreadyExists(metadata['pmcid']))
+
 
     #print(item.authorAlreadyExists('0000-0002-1298-7653'))
 

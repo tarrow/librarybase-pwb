@@ -6,7 +6,7 @@ from epmclib.exceptions import IDNotResolvedException
 
 citefile = queryCiteFile.CiteFile()
 citations = citefile.findRowsWithIDType('pmc')
-for citation in citations[:100]:
+for citation in citations[1200:]:
 	print('trying to add' + citation[5])
 	site = pywikibot.Site("librarybase", "librarybase")
 	item = librarybase.JournalArticlePage(site)
