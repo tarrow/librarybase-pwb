@@ -9,11 +9,23 @@ sparqlepointurl = "http://sparql.librarybase.wmflabs.org/"
 #sparqlepointurl = "http://localhost:9999/"
 
 class LibraryBaseSearch():
+    """
+    A searcher tool for librarybase that utilises the SPARQL endpoint available at
+    sparql.librarybase.wmflabs.org
+    """
+
     def __init__(self, sparqlepointurl="http://sparql.librarybase.wmflabs.org/"):
         self.sparqlepointurl = sparqlepointurl
         pass
 
     def rawquery(self,querystring):
+        """
+        Takes a SPARQL query and does the grunt work of submitting it before adding it
+        self.results as JSON
+
+        :param querystring: A sparql query string
+        :return:
+        """
         sparql = SPARQLWrapper("{}bigdata/namespace/lb/sparql".format(self.sparqlepointurl))
         sparql.setQuery(querystring)
         sparql.setReturnFormat(JSON)
@@ -21,6 +33,12 @@ class LibraryBaseSearch():
         self.results = results
 
     def JournalArticleGenerator(self,gen):
+        """
+        Converts a generic ItemPage generator into a JournalArticle generator
+
+        :param gen:
+        :return:
+        """
         for page in gen:
             if isinstance(page, JournalArticlePage):
                 yield page
@@ -28,6 +46,11 @@ class LibraryBaseSearch():
                 yield JournalArticlePage(pywikibot.getSite(), page.title())
 
     def JournalGenerator(self,gen):
+        """
+        Converts a generic ItemPage generator into a JournalGenerator
+        :param gen:
+        :return:
+        """
         for page in gen:
             if isinstance(page, JournalPage):
                 yield page
@@ -35,6 +58,11 @@ class LibraryBaseSearch():
                 yield JournalPage(pywikibot.getSite(), page.title())
 
     def AuthorGenerator(self,gen):
+        """
+        Converts a generic ItemPage generator into an AuthorGenerator
+        :param gen:
+        :return:
+        """
         for page in gen:
             if isinstance(page, AuthorPage):
                 yield page
@@ -42,6 +70,12 @@ class LibraryBaseSearch():
                 yield AuthorPage(pywikibot.getSite(), page.title())
 
     def findJournalArticlesMissingOntologicalData(self):
+        """
+        Returns a Journal Article Generator containing all those items
+        which have a PMCID but are missing either source-type OR item type
+        claims
+        :return:
+        """
         querystring = """prefix lbt: <http://librarybase.wmflabs.org/prop/direct/>
 						prefix lb: <http://librarybase.wmflabs.org/entity/>
 
@@ -56,6 +90,13 @@ class LibraryBaseSearch():
         return self.JournalArticleGenerator(PagesFromTitlesGenerator(textlist))
 
     def findJournalByISSN(self, issn):
+        """
+        Returns a Journal generator that contains all those items that are of source-type journal
+        and have the ISSN property set to the ISSN parameter.
+        This should really only be one since each ISSN is only assigned to one Journal.
+        :param issn:
+        :return:
+        """
         querystring = u"""prefix lbt: <http://librarybase.wmflabs.org/prop/direct/>
 						prefix lb: <http://librarybase.wmflabs.org/entity/>
 
@@ -68,6 +109,11 @@ class LibraryBaseSearch():
         return self.JournalGenerator(PagesFromTitlesGenerator(textlist))
 
     def predictISSNOfJournalsFromISSNOfArticle(self):
+        """
+        Return a list of journal Items and ISSNs by
+        assuming that the ISSN which has wrongly been placed on an item which is published in that journal
+        :return:
+        """
         querystring = u"""prefix lbt: <http://librarybase.wmflabs.org/prop/direct/>
 						prefix lb: <http://librarybase.wmflabs.org/entity/>
 
@@ -79,6 +125,11 @@ class LibraryBaseSearch():
         return [[line['journal']['value'][39:],line['issn']['value']] for line in self.results['results']['bindings']]
 
     def findJournalArticleswithISSNThatPointToJournalWithoutISSN(self):
+        """
+        Return list of Journal Articles that point to a journal and the  journal item has no ISSN claim
+        However the journal article item (wrongly) does.
+        :return:
+        """
         querystring = u"""prefix lbt: <http://librarybase.wmflabs.org/prop/direct/>
 						prefix lb: <http://librarybase.wmflabs.org/entity/>
 
@@ -107,20 +158,32 @@ class LibraryBasePage(pywikibot.ItemPage):
         return None
 
     def getClaimTargets(self, property):
+        """
+        Gets the targets of the claims for a given property of the current LibraryBase page
+        :param property:
+        :return:
+        """
         claims=self.getClaims(property)
         return [claim.getTarget() for claim in claims]
 
     def makeSimpleClaim(self, property, target, reference='EPMC'):
+        """
+        Add a simple claim to an item by just giving it a property and a target
+        Also adds a default reference for the claim.
+        TODO: Break out the add reference bit to another method and make more sensible defaults
+        :param property:
+        :param target:
+        :param reference:
+        :return:
+        """
         if not hasattr(self, 'claims'):
             self.get()
         claim = pywikibot.Claim(self.site, property)
         claim.setTarget(target)
         claimShouldBeMade=True
-        if self.claims:
-            if property in self.claims:
-                if claim.getTarget() in [i.getTarget() for i in self.claims[property]]:
-                    print('Claim shouldn\'t be made: it is already present on article {}'.format(self.getID()))
-                    claimShouldBeMade=False
+        if claim.getTarget() in self.getClaimTargets(property):
+            print('Claim shouldn\'t be made: it is already present on article {}'.format(self.getID()))
+            claimShouldBeMade=False
         if claimShouldBeMade:
             print('adding claim to {}: {} targetting {}'.format(self.getID(), claim.getID(), claim.getTarget()))
             self.addClaim(claim)
@@ -131,6 +194,11 @@ class LibraryBasePage(pywikibot.ItemPage):
                 claim.addSource(fromEPMCClaim)
 
     def getItemType(self):
+        """
+        Get type of item from a dict of 'vanity names for items'.
+        TODO: This should now use get claim targets.
+        :return:
+        """
         self.get()
         if self.claims:
             if 'P19' in self.claims:
@@ -165,6 +233,13 @@ class JournalArticlePage(LibraryBasePage):
     #Type of source = journal article
 
     def addAuthor(self, author):
+        """
+        Test whether or not the metadata from the provider has an orcid for this author
+        If so we see if we already have an item for it. If we have an item we make the claim; if not we make it and
+        make the claim. Otherwise we just make an item and claim it without an Orcid being involved.
+        :param author:
+        :return:
+        """
         authorPage=AuthorPage(self.site)
         if author in self.metadata['orcids']:
             existingauthor = self.authorAlreadyExists(self.metadata['orcids'][author])
