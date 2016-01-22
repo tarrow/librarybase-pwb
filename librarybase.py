@@ -155,7 +155,7 @@ class LibraryBasePage(pywikibot.ItemPage):
         if self.claims:
             if property in self.claims:
                 return self.claims[property]
-        return None
+        return []
 
     def getClaimTargets(self, property):
         """
