@@ -3,6 +3,9 @@ from pywikibot.pagegenerators import PagesFromTitlesGenerator, WikibaseItemGener
 from epmclib.getPMCID import getPMCID
 import queryCiteFile
 from SPARQLWrapper import SPARQLWrapper, JSON
+from collections import defaultdict
+import urllib.error
+import time
 
 global sparqlepointurl
 sparqlepointurl = "http://sparql.librarybase.wmflabs.org/"
@@ -166,6 +169,7 @@ class LibraryBasePage(pywikibot.ItemPage):
         claims=self.getClaims(property)
         return [claim.getTarget() for claim in claims]
 
+
     def makeSimpleClaim(self, property, target, reference='EPMC'):
         """
         Add a simple claim to an item by just giving it a property and a target
@@ -182,16 +186,52 @@ class LibraryBasePage(pywikibot.ItemPage):
         claim.setTarget(target)
         claimShouldBeMade=True
         if claim.getTarget() in self.getClaimTargets(property):
-            print('Claim shouldn\'t be made: it is already present on article {}'.format(self.getID()))
+            #print('Claim shouldn\'t be made: it is already present on article {}'.format(self.getID()))
             claimShouldBeMade=False
         if claimShouldBeMade:
-            print('adding claim to {}: {} targetting {}'.format(self.getID(), claim.getID(), claim.getTarget()))
+            #print('adding claim to {}: {} targetting {}'.format(self.getID(), claim.getID(), claim.getTarget()))
             self.addClaim(claim)
             if reference == 'EPMC':
-                print('with reference to EPMC')
+                #print('with reference to EPMC')
                 fromEPMCClaim = pywikibot.Claim(self.site, 'P20')
                 fromEPMCClaim.setTarget(pywikibot.ItemPage(self.site, title='Q335'))
                 claim.addSource(fromEPMCClaim)
+
+    def addDelayedClaim(self, property, target, reference='EPMC'):
+        """
+        Add a delayed claim claim to an item by just giving it a property and a target
+        Also adds a default reference for the claim.
+        :param property:
+        :param target:
+        :param reference:
+        :return:
+        """
+        if not hasattr(self, 'claims'):
+            self.get()
+        claim = pywikibot.Claim(self.site, property)
+        claim.setTarget(target)
+        claimShouldBeMade=True
+        if claim.getTarget() in self.getClaimTargets(property):
+            #Claim shouldn't be made: it is already present on article
+            claimShouldBeMade=False
+        if claimShouldBeMade:
+            #print('adding claim to {}: {} targetting {}'.format(self.getID(), claim.getID(), claim.getTarget()))
+            claim.id=claim.getID()
+            if reference == 'EPMC':
+                #print('with reference to EPMC')
+                fromEPMCClaim = pywikibot.Claim(self.site, 'P20')
+                fromEPMCClaim.setTarget(pywikibot.ItemPage(self.site, title='Q335'))
+                sources = defaultdict(list)
+                sources[fromEPMCClaim.getID()].append(fromEPMCClaim)
+                claim.sources.append(sources)
+            #handle self.claims not existing
+            if not self.claims:
+                self.claims = defaultdict(list)
+            if not property in self.claims:
+                self.claims[property]=[]
+            #actually incrfease claims
+            self.claims[property].append(claim)
+
 
     def getItemType(self):
         """
@@ -228,6 +268,8 @@ class JournalArticlePage(LibraryBasePage):
         self.makeSimpleClaim('P3', pywikibot.ItemPage(self.site, title='Q10'), reference=None) #type of source item - jounal item
 
     def setTitle(self, title):
+        if len(title)>249:
+            title=title[:249]
         self.editLabels( {'en': {'language': 'en', 'value': title}} )
     #self.makeSimpleClaim('P2', title)
     #Type of source = journal article
@@ -251,8 +293,8 @@ class JournalArticlePage(LibraryBasePage):
         else:
             authorPage.setName(author)
             authorPage.setItemType()
-        print("adding author:" + author)
-        self.makeSimpleClaim('P2', authorPage)
+        #print("adding author:" + author)
+        self.addDelayedClaim('P2', authorPage)
 
 
     def setAuthors(self, authors):
@@ -268,19 +310,19 @@ class JournalArticlePage(LibraryBasePage):
 
     def setVolume(self, volume):
         if volume:
-            self.makeSimpleClaim('P9', volume)
+            self.addDelayedClaim('P9', volume)
 
     def setIssue(self, issue):
         if issue:
-            self.makeSimpleClaim('P10', issue)
+            self.addDelayedClaim('P10', issue)
 
     def setPages(self, pages):
         if pages:
-            self.makeSimpleClaim('P11', pages)
+            self.addDelayedClaim('P11', pages)
 
     def setDOI(self, doi):
         if doi:
-            self.makeSimpleClaim('P13', doi)
+            self.addDelayedClaim('P13', doi)
 
     def setISSN(self, issn):
         if issn:
@@ -296,7 +338,7 @@ class JournalArticlePage(LibraryBasePage):
 
     def setPMID(self, pmid):
         if pmid:
-            self.makeSimpleClaim('P15', pmid)
+            self.addDelayedClaim('P15', pmid)
 
     def setPMCID(self, pmcid):
         self.makeSimpleClaim('P17', pmcid)
@@ -305,11 +347,11 @@ class JournalArticlePage(LibraryBasePage):
         citefile = queryCiteFile.CiteFile()
         articles = citefile.findPagesIDAppears(pmcid)
         for idx, article in enumerate(articles):
-            print(idx)
+            #print(idx)
             self.addArticle(article)
 
     def addArticle(self, article):
-        self.makeSimpleClaim('P8', article)
+        self.addDelayedClaim('P8', article)
 
     def setJournal(self, journal, issn=None):
         newJournalItemNeeded = True
@@ -341,6 +383,7 @@ class JournalArticlePage(LibraryBasePage):
         self.setPMID(metadata['pmid'])
         self.setAuthors(metadata['authors'])
         self.setArticles(metadata['pmcid'])
+        self.editEntity()
 
 
     def articleAlreadyExists(self, id):
@@ -352,7 +395,16 @@ class JournalArticlePage(LibraryBasePage):
  		}""" % id
         sparql.setQuery(querystring)
         sparql.setReturnFormat(JSON)
-        results = sparql.query().convert()
+        attempts = 0
+        while attempts < 10:
+            try:
+                results = sparql.query().convert()
+                break
+            except (urllib.error.URLError, urllib.error.HTTPError):
+                attempts += 1
+                continue
+        else:
+            raise urllib.error.URLError
         if len(results["results"]["bindings"]) >= 1:
             return True
         else:
@@ -412,7 +464,7 @@ if __name__ == '__main__':
     pmcidobj.getBBasicMetadata()
     metadata = pmcidobj.metadata
 
-    print(item.articleAlreadyExists(metadata['pmcid']))
+    #print(item.articleAlreadyExists(metadata['pmcid']))
 
 
     #print(item.authorAlreadyExists('0000-0002-1298-7653'))
