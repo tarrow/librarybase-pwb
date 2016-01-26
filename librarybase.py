@@ -32,7 +32,15 @@ class LibraryBaseSearch():
         sparql = SPARQLWrapper("{}bigdata/namespace/lb/sparql".format(self.sparqlepointurl))
         sparql.setQuery(querystring)
         sparql.setReturnFormat(JSON)
-        results = sparql.query().convert()
+        while attempts < 10:
+            try:
+                results = sparql.query().convert()
+                break
+            except (urllib.error.URLError, urllib.error.HTTPError) as neterror:
+                attempts += 1
+                continue
+        else:
+            raise neterror
         self.results = results
 
     def JournalArticleGenerator(self,gen):
@@ -400,11 +408,11 @@ class JournalArticlePage(LibraryBasePage):
             try:
                 results = sparql.query().convert()
                 break
-            except (urllib.error.URLError, urllib.error.HTTPError):
+            except (urllib.error.URLError, urllib.error.HTTPError) as neterror:
                 attempts += 1
                 continue
         else:
-            raise urllib.error.URLError
+            raise neterror
         if len(results["results"]["bindings"]) >= 1:
             return True
         else:
