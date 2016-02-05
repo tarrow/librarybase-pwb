@@ -193,7 +193,7 @@ class LibraryBasePage(pywikibot.ItemPage):
             self.addClaim(claim)
             if reference == 'EPMC':
                 #print('with reference to EPMC')
-                fromEPMCClaim = pywikibot.Claim(self.site, 'P20')
+                fromEPMCClaim = pywikibot.Claim(self.site, 'P20', isReference=True)
                 fromEPMCClaim.setTarget(pywikibot.ItemPage(self.site, title='Q335'))
                 claim.addSource(fromEPMCClaim)
 
@@ -219,7 +219,7 @@ class LibraryBasePage(pywikibot.ItemPage):
             claim.id=claim.getID()
             if reference == 'EPMC':
                 #print('with reference to EPMC')
-                fromEPMCClaim = pywikibot.Claim(self.site, 'P20')
+                fromEPMCClaim = pywikibot.Claim(self.site, 'P20', isReference=True)
                 fromEPMCClaim.setTarget(pywikibot.ItemPage(self.site, title='Q335'))
                 sources = defaultdict(list)
                 sources[fromEPMCClaim.getID()].append(fromEPMCClaim)
