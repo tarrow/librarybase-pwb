@@ -32,6 +32,7 @@ class LibraryBaseSearch():
         sparql = SPARQLWrapper("{}bigdata/namespace/lb/sparql".format(self.sparqlepointurl))
         sparql.setQuery(querystring)
         sparql.setReturnFormat(JSON)
+        attempts = 0
         while attempts < 10:
             try:
                 results = sparql.query().convert()
@@ -99,6 +100,14 @@ class LibraryBaseSearch():
         self.rawquery(querystring)
         textlist = [line['s']['value'][38:] for line in self.results['results']['bindings']]
         return self.JournalArticleGenerator(PagesFromTitlesGenerator(textlist))
+
+    def findArticleByPMCID(self, id):
+        querystring = """
+		PREFIX wdt: <http://librarybase.wmflabs.org/prop/direct/>
+		SELECT ?s WHERE {
+		?s wdt:P17 "%s" .
+ 		}""" % id
+        self.rawquery(querystring)
 
     def findJournalByISSN(self, issn):
         """
@@ -294,8 +303,9 @@ class JournalArticlePage(LibraryBasePage):
         if author in self.metadata['orcids']:
             existingauthor = self.authorAlreadyExists(self.metadata['orcids'][author])
             if existingauthor == False :
-
-                authorPage.addOrcid(metadata['orcids'][author])
+                authorPage.setName(author)
+                authorPage.addOrcid(self.metadata['orcids'][author])
+                authorPage.setItemType()
             else:
                 authorPage=AuthorPage(self.site, existingauthor)
         else:
@@ -404,15 +414,17 @@ class JournalArticlePage(LibraryBasePage):
         sparql.setQuery(querystring)
         sparql.setReturnFormat(JSON)
         attempts = 0
-        while attempts < 10:
+        while True:
             try:
                 results = sparql.query().convert()
                 break
             except (urllib.error.URLError, urllib.error.HTTPError) as neterror:
                 attempts += 1
+                time.sleep(3)
                 continue
         else:
-            raise neterror
+            print('attempts' + attempts)
+            raise urllib.error.URLError
         if len(results["results"]["bindings"]) >= 1:
             return True
         else:
