@@ -287,7 +287,7 @@ class JournalArticlePage(LibraryBasePage):
             existingauthor = self.authorAlreadyExists(self.metadata['orcids'][author])
             if existingauthor == False :
 
-                authorPage.addOrcid(metadata['orcids'][author])
+                authorPage.addOrcid(self.metadata['orcids'][author])
             else:
                 authorPage=AuthorPage(self.site, existingauthor)
         else:
