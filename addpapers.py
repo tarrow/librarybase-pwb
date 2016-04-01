@@ -33,21 +33,21 @@ def worker():
             print("{} already exists. Doing nothing".format(metadata['pmcid']))
         q.task_done()
 
-q=queue.Queue()
-threads = []
-for i in range(10):
-    t = threading.Thread(target=worker)
-    t.start()
-    threads.append(t)
+# q=queue.Queue()
+# threads = []
+# for i in range(10):
+#     t = threading.Thread(target=worker)
+#     t.start()
+#     threads.append(t)
 
 citefile = queryCiteFile.CiteFile()
 citations = citefile.findRowsWithIDType('pmc')
 for citation in enumerate(citations[10513:]):
-    q.put(citation)
+    worker(citation)
 
-q.join()
-
-for i in range(10):
-    q.put(None)
-for t in threads:
-    t.join()
+# q.join()
+#
+# for i in range(10):
+#     q.put(None)
+# for t in threads:
+#     t.join()
