@@ -7,7 +7,6 @@ import queue
 import threading
 import time
 
-q=queue.Queue()
 
 def doStuff():
     citefile = queryCiteFile.CiteFile()
@@ -63,3 +62,6 @@ def doOneThing( idx, citation ):
             print("set metadata in" + str(time.time()-start))
         else:
             print("{} already exists. Doing nothing".format(metadata['pmcid']))
+
+q=queue.Queue()
+doStuff()
