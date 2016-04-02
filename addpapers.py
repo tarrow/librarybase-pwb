@@ -8,16 +8,16 @@ import threading
 import time
 
 
-def doStuff():
+def rununthreaded():
     citefile = queryCiteFile.CiteFile()
     citations = citefile.findRowsWithIDType('pmc')
     for idx, citation in enumerate(citations[10513:]):
-        doOneThing(idx, citation)
+        addpaper(idx, citation)
 
-def doStuffThreaded():
+def runthreaded():
     threads = []
     for i in range(10):
-        t = threading.Thread(target=actuallyDoStuffThreaded())
+        t = threading.Thread(target=worker())
         t.start()
         threads.append(t)
 
@@ -34,13 +34,13 @@ def doStuffThreaded():
         t.join()
 
 
-def actuallyDoStuffThreaded():
+def worker():
     while True:
         idx, citation = q.get()
-        doOneThing( idx, citation )
+        addpaper( idx, citation )
         q.task_done()
 
-def doOneThing( idx, citation ):
+def addpaper( idx, citation ):
         start=time.time()
         print(citation)
         if citation is None:
@@ -64,4 +64,4 @@ def doOneThing( idx, citation ):
             print("{} already exists. Doing nothing".format(metadata['pmcid']))
 
 q=queue.Queue()
-doStuff()
+rununthreaded()
